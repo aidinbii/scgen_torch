@@ -11,7 +11,6 @@ from .vaearith import vaeArith
 from .trainer import vaeArithTrainer
 from ._utils import _validate_var_names
 
-
 class BaseMixin:
     """ Adapted from
         Title: scvi-tools
@@ -186,7 +185,7 @@ class VAEARITH(BaseMixin):
             If `True` layer normalization will be applied to layers.
     """
 
-    def __init__(self, adata: AnnData, hidden_layer_sizes: list = [800, 800], z_dimension = 100, dr_rate: float = 0.2, use_cuda = True):
+    def __init__(self, adata: AnnData, hidden_layer_sizes: list = [800, 800], z_dimension = 100, dr_rate: float = 0.2):
         self.adata = adata
 
         self.x_dim = adata.n_vars
@@ -202,7 +201,44 @@ class VAEARITH(BaseMixin):
         self.is_trained_ = False
         self.trainer = None
 
-    def train(self):
-        self.trainer = vaeArithTrainer(self.model, self.adata)
-        self.trainer.train(use_validation=True, verbose = True)
+    def train(self, n_epochs = 25, batch_size = 32, save = True, verbose = True):
+        self.trainer = vaeArithTrainer(self.model, self.adata, n_epochs, batch_size, save, verbose)
+        self.trainer.train()
         self.is_trained_ = True
+
+
+    def to_latent(self, data):
+        """
+            Map `data` in to the latent space. This function will feed data
+            in encoder part of VAE and compute the latent space coordinates
+            for each sample in data.
+
+            # Parameters
+                data:  numpy nd-array
+                    Numpy nd-array to be mapped to latent space. `data.X` has to be in shape [n_obs, n_vars].
+
+            # Returns
+                latent: numpy nd-array
+                    Returns array containing latent space encoding of 'data'
+        """
+        device = next(self.model.parameters()).device # to cpu
+        data = torch.tensor(data, device=device) # to tensor
+        latent = self.model.to_latent(data)
+        latent = latent.cpu().detach()
+        return np.array(latent)
+
+
+    def reconstruct(self, data, use_data):
+        device = next(self.model.parameters()).device # to cpu
+        data = torch.tensor(data, device=device) # to tensor
+        rec_data = self.model.reconstruct(data, use_data)
+        rec_data = rec_data.cpu().detach()
+        return np.array(rec_data)
+
+
+    def predict(self, adata, conditions, cell_type_key, condition_key, adata_to_predict=None, celltype_to_predict=None, obs_key="all"):
+        device = next(self.model.parameters()).device # to cpu
+        prediction = torch.tensor(data, device=device) # to tensor
+        rec_data = self.model.reconstruct(data, use_data)
+        rec_data = rec_data.cpu().detach()
+        return np.array(rec_data)

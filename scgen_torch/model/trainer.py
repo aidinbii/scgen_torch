@@ -54,7 +54,7 @@ class vaeArithTrainer:
     ```
     """
 
-    def __init__(self, model, adata, use_validation=False,n_epochs=25, batch_size=32, early_stop_limit = 20, threshold=0.0025, initial_run=True, shuffle=True, save=True, verbose=False, **kwargs): # maybe add more parameters
+    def __init__(self, model, adata, n_epochs, batch_size, save, verbose, use_validation=False, early_stop_limit = 20, threshold=0.0025, initial_run=True, shuffle=True,  **kwargs): # maybe add more parameters
 
         # super().__init__()
 
@@ -110,7 +110,7 @@ class vaeArithTrainer:
         return train_adata, valid_adata
 
 
-    def train(self, lr=1e-3, eps=0.01, params=None, use_validation = False, verbose = False, **extras_kwargs):
+    def train(self, lr=1e-3, eps=0.01, params=None, use_validation = False, **extras_kwargs):
         if self.initial_run:
             log.info("----Training----")
         if not self.initial_run:
@@ -186,10 +186,10 @@ class vaeArithTrainer:
                             loss = self.model._loss_function(x_mb, reconstructions, mu, logvar)
 
                             valid_loss += loss.item() # loss.item() contains the loss of entire mini-batch divided by the batch size
-                if verbose:
+                if self.verbose:
                     print(f"Epoch: {epoch}. Train Loss: {train_loss_end_epoch / (1)} Validation Loss: {valid_loss / (1)}")
             else:
-                if verbose:
+                if self.verbose:
                     print(f"Epoch: {epoch}. Train Loss: {train_loss / (train_adata.shape[0] )}")
         if self.save:
             #os.makedirs(self.model_to_use, exist_ok=True)

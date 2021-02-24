@@ -9,7 +9,6 @@ from scipy import sparse
 from sklearn import preprocessing
 import pandas as pd
 
-# import scgen
 
 
 def data_remover(adata, remain_list, remove_list, cell_type_key, condition_key):

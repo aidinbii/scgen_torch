@@ -145,6 +145,8 @@ class vaeArith(nn.Module):
         x_hat = self.decoder(z)
         return x_hat, mu, logvar
 
+
+
     def restore_model(self):
         """
             restores model weights from `model_to_use`.
