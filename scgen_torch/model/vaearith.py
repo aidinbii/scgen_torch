@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from .modules import Encoder, Decoder
+import numpy
+from scipy import sparse
 
+from .modules import Encoder, Decoder
+from .util import balancer, extractor
 
 class vaeArith(nn.Module):
     """VAE with Arithmetic vector Network class. This class contains the implementation of Variational Auto-encoder network with Vector Arithmetics.
@@ -76,6 +79,8 @@ class vaeArith(nn.Module):
                 latent: numpy nd-array
                     Returns array containing latent space encoding of 'data'
         """
+        if not torch.is_tensor(data):
+            data = torch.tensor(data) # to tensor
         mu, logvar = self.encoder(data)
         latent = self._sample_z(mu, logvar)
         return latent
@@ -93,6 +98,7 @@ class vaeArith(nn.Module):
                 The average of latent space mapping in numpy nd-array.
 
         """
+        #data = torch.tensor(data) # to tensor
         latent = self.to_latent(data)
         latent_avg = torch.mean(latent, dim=0) # maybe keepdim = True, so that shape (,1)
         return latent_avg
@@ -113,6 +119,9 @@ class vaeArith(nn.Module):
                 rec_data: 'numpy nd-array'
                     Returns 'numpy nd-array` containing reconstructed 'data' in shape [n_obs, n_vars].
         """
+        if not torch.is_tensor(data):
+            data = torch.tensor(data) # to tensor
+
         if use_data:
             rec_data = self.decoder(data)
         else:
@@ -145,6 +154,80 @@ class vaeArith(nn.Module):
         x_hat = self.decoder(z)
         return x_hat, mu, logvar
 
+    def predict(self, adata, conditions, cell_type_key, condition_key, adata_to_predict=None, celltype_to_predict=None,
+              obs_key="all", biased=False):
+        """
+            Predicts the cell type provided by the user in stimulated condition.
+
+            # Parameters
+                celltype_to_predict: basestring
+                    The cell type you want to be predicted.
+                obs_key: basestring or dict
+                    Dictionary of celltypes you want to be observed for prediction.
+                adata_to_predict: `~anndata.AnnData`
+                    Adata for unpertubed cells you want to be predicted.
+
+            # Returns
+                predicted_cells: numpy nd-array
+                    `numpy nd-array` of predicted cells in primary space.
+                delta: float
+                    Difference between stimulated and control cells in latent space
+
+            # Example
+            ```python
+                import anndata
+                import scgen
+                train_data = anndata.read("./data/train.h5ad"
+                validation_data = anndata.read("./data/validation.h5ad")
+                network = scgen.VAEArith(x_dimension= train_data.shape[1], model_path="./models/test" )
+                network.train(train_data=train_data, use_validation=True, valid_data=validation_data, shuffle=True, n_epochs=2)
+        pred, delta = scg.predict(adata= train_new,conditions={"ctrl": "control", "stim":"stimulated"},
+                          cell_type_key="cell_type",condition_key="condition",adata_to_predict=unperturbed_cd4t)            ```
+        """
+        if obs_key == "all":
+            ctrl_x = adata[adata.obs[condition_key] == conditions["ctrl"], :]
+            stim_x = adata[adata.obs[condition_key] == conditions["stim"], :]
+            if not biased:
+                ctrl_x = balancer(ctrl_x, cell_type_key=cell_type_key, condition_key=condition_key)
+                stim_x = balancer(stim_x, cell_type_key=cell_type_key, condition_key=condition_key)
+        else:
+            key = list(obs_key.keys())[0]
+            values = obs_key[key]
+            subset = adata[adata.obs[key].isin(values)]
+            ctrl_x = subset[subset.obs[condition_key] == conditions["ctrl"], :]
+            stim_x = subset[subset.obs[condition_key] == conditions["stim"], :]
+            if len(values) > 1 and not biased:
+                ctrl_x = balancer(ctrl_x, cell_type_key=cell_type_key, condition_key=condition_key)
+                stim_x = balancer(stim_x, cell_type_key=cell_type_key, condition_key=condition_key)
+        if celltype_to_predict is not None and adata_to_predict is not None:
+            raise Exception("Please provide either a cell type or adata not both!")
+        if celltype_to_predict is None and adata_to_predict is None:
+            raise Exception("Please provide a cell type name or adata for your unperturbed cells")
+        if celltype_to_predict is not None:
+            ctrl_pred = extractor(adata, celltype_to_predict, conditions, cell_type_key, condition_key)[1]
+        else:
+            ctrl_pred = adata_to_predict
+        if not biased:
+            eq = min(ctrl_x.X.shape[0], stim_x.X.shape[0])
+            cd_ind = numpy.random.choice(range(ctrl_x.shape[0]), size=eq, replace=False)
+            stim_ind = numpy.random.choice(range(stim_x.shape[0]), size=eq, replace=False)
+        else:
+            cd_ind = numpy.random.choice(range(ctrl_x.shape[0]), size=ctrl_x.shape[0], replace=False)
+            stim_ind = numpy.random.choice(range(stim_x.shape[0]), size=stim_x.shape[0], replace=False)
+        if sparse.issparse(ctrl_x.X) and sparse.issparse(stim_x.X):
+            latent_ctrl = self._avg_vector(ctrl_x.X.A[cd_ind, :])
+            latent_sim = self._avg_vector(stim_x.X.A[stim_ind, :])
+        else:
+            latent_ctrl = self._avg_vector(ctrl_x.X[cd_ind, :])
+            latent_sim = self._avg_vector(stim_x.X[stim_ind, :])
+            delta = latent_sim - latent_ctrl
+        if sparse.issparse(ctrl_pred.X):
+            latent_cd = self.to_latent(ctrl_pred.X.A)
+        else:
+            latent_cd = self.to_latent(ctrl_pred.X)
+        stim_pred = delta + latent_cd
+        predicted_cells = self.reconstruct(stim_pred, use_data=True)
+        return predicted_cells, delta
 
 
     def restore_model(self):

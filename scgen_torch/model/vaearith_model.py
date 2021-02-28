@@ -238,7 +238,8 @@ class VAEARITH(BaseMixin):
 
     def predict(self, adata, conditions, cell_type_key, condition_key, adata_to_predict=None, celltype_to_predict=None, obs_key="all"):
         device = next(self.model.parameters()).device # to cpu
-        prediction = torch.tensor(data, device=device) # to tensor
-        rec_data = self.model.reconstruct(data, use_data)
-        rec_data = rec_data.cpu().detach()
-        return np.array(rec_data)
+        #adata_tensor = torch.tensor(adata, device=device) # to tensor
+        output = self.model.predict(adata, conditions, cell_type_key, condition_key, adata_to_predict, celltype_to_predict, obs_key)
+        prediction = output[0].cpu().detach()
+        delta = output[1].cpu().detach()
+        return np.array(prediction), np.array(delta)
